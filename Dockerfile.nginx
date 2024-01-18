@@ -1,0 +1,9 @@
+FROM bitnami/git:2.43.0 AS build
+
+RUN mkdir /repman
+RUN git clone https://github.com/repman-io/repman.git /repman
+
+FROM nginx:1.17-alpine
+COPY --from=build /repman/docker/nginx/scripts /nginx
+COPY --from=build /repman/docker/nginx/ssl /etc/ssl
+COPY --from=build /repman/public /app/public

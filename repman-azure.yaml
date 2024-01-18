@@ -1,0 +1,142 @@
+apiVersion: '2021-10-01'
+location: eastus
+name: repman
+properties:
+  containers:
+  - name: database
+    properties:
+      image: postgres:11.20-alpine
+      resources:
+        requests:
+          cpu: 1
+          memoryInGb: 1.5
+      environmentVariables:
+      - name: POSTGRES_USER
+        value: main
+      - name: POSTGRES_PASSWORD
+        value: main
+      - name: POSTGRES_DB
+        value: main
+      ports:
+      - port: 5432
+  - name: app
+    properties:
+      image: repmanreg.azurecr.io/repman-app:latest
+      ports:
+      - port: 9000
+      resources:
+        requests:
+          cpu: 1
+          memoryInGb: 1.5
+      volumeMounts: &app_volumes
+      - name: repmanproxypackages
+        mountPath: /app/var/proxy
+      - name: repmanprivatepackages
+        mountPath: /app/var/repo
+      environmentVariables: &app_envs
+          - name: PHP_URL
+            value: localhost:9000
+          - name: APP_HOST
+            value: repman.wip
+          - name: APP_DOMAIN_SEPARATOR
+            value: .
+          - name: APP_ORGANIZATION_SEPARATOR
+            value: .
+          - name: APP_URL_SCHEME
+            value: https
+          - name: APP_ALLOWED_PACKAGE_TYPES
+            value: git,github,gitlab,bitbucket,subversion,mercurial,pear,artifact,path
+          - name: APP_GITLAB_API_URL
+            value: https://gitlab.com
+          - name: APP_ENV
+            value: prod
+          - name: APP_DEBUG
+            value: 0
+          - name: APP_SECRET
+            value: c7dbd995176e079f857b6649b60ccf68
+          - name: DATABASE_URL
+            value: postgresql://main:main@localhost:5432/main?serverVersion=11&charset=utf8
+          - name: MAILER_DSN
+            value: smtp://mailhog:1025
+          - name: MAILER_SENDER
+            value: repman@buddy.works
+          - name: STORAGE_SOURCE
+            value: storage.local
+          - name: PROXY_DIST_DIR
+            value: "/app/var/proxy"
+          - name: PACKAGES_DIST_DIR
+            value: "/app/var/repo"
+          - name: SECURITY_ADVISORIES_DB_DIR
+            value: "%kernel.project_dir%/var/security-advisories"
+          - name: EWZ_RECAPTCHA_ENABLED
+            value: false
+          - name: EWZ_RECAPTCHA_SITE_KEY
+            value: insert-recaptcha-site-key
+          - name: EWZ_RECAPTCHA_SECRET
+            value: insert-recaptcha-secret
+  - name: consumer
+    properties:
+      image: buddy/repman:1.3.4
+      command: 
+       - 'bin/console'
+       - 'messenger:consume'
+       - 'async'
+       - '--limit=500'
+      resources:
+        requests:
+          cpu: 1
+          memoryInGb: 1
+      volumeMounts: *app_volumes
+      environmentVariables: *app_envs
+  - name: cron
+    properties:
+      image: buddy/repman:1.3.4
+      command: 
+      - 'crond'
+      - '-f'
+      - '-L'
+      - '/app/var/log/cron.log'
+      resources:
+        requests:
+          cpu: 0.5
+          memoryInGb: 1
+      volumeMounts: *app_volumes
+      environmentVariables: *app_envs
+  - name: nginx
+    properties:
+      image: repmanreg.azurecr.io/repman-nginx:latest
+      command: 
+       - '/nginx/start.sh'
+      resources:
+        requests:
+          cpu: 0.5
+          memoryInGb: 1
+      ports:
+      - port: 80
+      - port: 443
+      environmentVariables: *app_envs
+  imageRegistryCredentials: # Credentials to pull a private image
+  - server: repmanreg.azurecr.io
+    username: <username>
+    password: <password>
+  volumes:
+  - name: repmanprivatepackages
+    azureFile:
+      shareName: rempanstoragefileshare
+      storageAccountName: repmanstorage
+      storageAccountKey: <key>
+  - name: repmanproxypackages
+    azureFile:
+      shareName: rempanstoragefileshare
+      storageAccountName: repmanstorage
+      storageAccountKey: <key>
+  osType: Linux
+  ipAddress:
+    type: Public
+    ports:
+    - protocol: tcp
+      port: 80
+    - protocol: tcp
+      port: 443
+tags: {exampleTag: tutorial}
+type: Microsoft.ContainerInstance/containerGroups
